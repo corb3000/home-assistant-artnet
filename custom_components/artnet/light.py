@@ -156,13 +156,13 @@ class ArtnetBaseLight(light.LightEntity):
     def fade_time(self, value):
         self._fade_time = value
 
-    def _channel_value_change(self):
+    def _channel_value_change(self, z):
         "Shedule update while fade is running"
         if time.time() - self._channel_last_update > 1.1:
             self._channel_last_update = time.time()
             self.async_schedule_update_ha_state()
     
-    def _channel_fade_finish(self):
+    def _channel_fade_finish(self, z):
         "Fade is finished -> shedule update"
         self._channel_last_update = time.time()
         self.async_schedule_update_ha_state()
