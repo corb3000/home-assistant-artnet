@@ -62,7 +62,7 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     __id = f'{host}:{port}'
     if not __id in ARTNET_NODES:
         __node = pyartnet.ArtNetNode(host, port, max_fps=config[CONF_NODE_MAX_FPS], refresh_every=config[CONF_NODE_REFRESH])
-        __node.start()
+        await __node.start()
         ARTNET_NODES[id] = __node
     node = ARTNET_NODES[id]
     assert isinstance(node, pyartnet.ArtNetNode), type(node)
