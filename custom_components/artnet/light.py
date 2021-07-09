@@ -91,7 +91,7 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     return True
 
 
-class ArtnetBaseLight(light.Light):
+class ArtnetBaseLight(light.LightEntity):
     def __init__(self, name, **kwargs):
         self._name = name
 
