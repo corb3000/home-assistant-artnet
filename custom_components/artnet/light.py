@@ -1,9 +1,6 @@
+from __future__ import annotations
 import time
 import typing
-
-from __future__ import annotations
-
-import random
 
 
 from homeassistant.components.light import (
