@@ -1,15 +1,37 @@
 import time
 import typing
 
-from homeassistant.components import light
+from __future__ import annotations
+
+import random
+
+
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP,
+    ATTR_EFFECT,
+    ATTR_RGB_COLOR,
+    ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
+    ATTR_TRANSITION,
+    COLOR_MODE_COLOR_TEMP,
+    COLOR_MODE_RGB,
+    COLOR_MODE_RGBW,
+    COLOR_MODE_RGBWW,
+    SUPPORT_EFFECT,
+    SUPPORT_TRANSITION,
+    LightEntity,
+)
+from . import DOMAIN
+
 from homeassistant.const import CONF_DEVICES
 from homeassistant.const import CONF_FRIENDLY_NAME as CONF_DEVICE_FRIENDLY_NAME
 from homeassistant.const import CONF_HOST as CONF_NODE_HOST
-from homeassistant.const import CONF_NAME          as CONF_DEVICE_NAME
+from homeassistant.const import CONF_NAME as CONF_DEVICE_NAME
 from homeassistant.const import CONF_PORT as CONF_NODE_PORT
-from homeassistant.const import CONF_TYPE          as CONF_DEVICE_TYPE
+from homeassistant.const import CONF_TYPE as CONF_DEVICE_TYPE
 
-CONF_DEVICE_TRANSITION = light.ATTR_TRANSITION
+CONF_DEVICE_TRANSITION = ATTR_TRANSITION
 
 import homeassistant.helpers.config_validation as cv
 import homeassistant.util.color as color_util
@@ -22,7 +44,7 @@ log.setLevel(logging.DEBUG)
 REQUIREMENTS = [ 'pyartnet == 0.8.2']
 
 log.info( f'PyArtNet: {REQUIREMENTS[0]}')
-log.info( f'Version : 2018.10.18 - 16:22')
+log.info( f'Version : 2021.07.10')
 
 CONF_NODE_MAX_FPS = 'max_fps'
 CONF_NODE_REFRESH = 'refresh_every'
@@ -61,7 +83,7 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     #setup Node
     __id = f'{host}:{port}'
     if not __id in ARTNET_NODES:
-        __node = pyartnet.ArtNetNode(host)#, port, max_fps=config[CONF_NODE_MAX_FPS], refresh_every=config[CONF_NODE_REFRESH])
+        __node = pyartnet.ArtNetNode(host, port, max_fps=config[CONF_NODE_MAX_FPS], refresh_every=config[CONF_NODE_REFRESH])
         await __node.start()
         ARTNET_NODES[id] = __node
     node = ARTNET_NODES[id]
@@ -91,13 +113,15 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     return True
 
 
-class ArtnetBaseLight(light.LightEntity):
+class ArtnetBaseLight(LightEntity):
     def __init__(self, name, **kwargs):
         self._name = name
 
         self._brightness = 255
         self._fade_time  = kwargs[CONF_DEVICE_TRANSITION]
         self._state = False
+        if self._effect_list is not None:
+            self._features |= SUPPORT_EFFECT
 
         # channel & notification callbacks
         self._channel : pyartnet.DmxChannel = None
@@ -117,9 +141,57 @@ class ArtnetBaseLight(light.LightEntity):
         return self._name
 
     @property
+    def unique_id(self):
+        # TODO add unique ID to device
+        """Return unique ID for light."""
+        return self._unique_id
+
+    @property
+    def available(self) -> bool:
+        """Return availability."""
+        # This demo light is always available, but well-behaving components
+        # should implement this to inform Home Assistant accordingly.
+        return self._available
+
+    @property
     def brightness(self):
         """Return the brightness of the light."""
         return self._brightness
+
+    @property
+    def color_mode(self) -> str | None:
+        """Return the color mode of the light."""
+        return self._color_mode
+
+    @property
+    def rgb_color(self) -> tuple:
+        """Return the rgb color value."""
+        return self._rgb_color
+
+    @property
+    def rgbw_color(self) -> tuple:
+        """Return the rgbw color value."""
+        return self._rgbw_color
+
+    @property
+    def rgbww_color(self) -> tuple:
+        """Return the rgbww color value."""
+        return self._rgbww_color
+
+    @property
+    def color_temp(self) -> int:
+        """Return the CT color temperature."""
+        return self._ct
+
+    @property
+    def effect_list(self) -> list:
+        """Return the list of supported effects."""
+        return self._effect_list
+
+    @property
+    def effect(self) -> str:
+        """Return the current effect."""
+        return self._effect
 
     @property
     def supported_features(self):
@@ -149,6 +221,16 @@ class ArtnetBaseLight(light.LightEntity):
         return False
 
     @property
+    def supported_features(self) -> int:
+        """Flag supported features."""
+        return self._features
+
+    @property
+    def supported_color_modes(self) -> set | None:
+        """Flag supported color modes."""
+        return self._color_modes
+
+    @property
     def fade_time(self):
         return self._fade_time
 
@@ -156,13 +238,13 @@ class ArtnetBaseLight(light.LightEntity):
     def fade_time(self, value):
         self._fade_time = value
 
-    def _channel_value_change(self, z):
+    def _channel_value_change(self, channel):
         "Shedule update while fade is running"
         if time.time() - self._channel_last_update > 1.1:
             self._channel_last_update = time.time()
             self.async_schedule_update_ha_state()
     
-    def _channel_fade_finish(self, z):
+    def _channel_fade_finish(self, channel):
         "Fade is finished -> shedule update"
         self._channel_last_update = time.time()
         self.async_schedule_update_ha_state()
@@ -175,7 +257,7 @@ class ArtnetBaseLight(light.LightEntity):
         "Instruct the light to turn on"
         self._state = True
         
-        transition =  kwargs.get(light.ATTR_TRANSITION, self._fade_time)
+        transition =  kwargs.get(ATTR_TRANSITION, self._fade_time)
         
         self._channel.add_fade(self.get_target_values(), transition * 1000, pyartnet.fades.LinearFade)
 
@@ -186,7 +268,7 @@ class ArtnetBaseLight(light.LightEntity):
         Instruct the light to turn off. If a transition time has been specified in seconds
         the controller will fade.
         """
-        transition = kwargs.get(light.ATTR_TRANSITION, self._fade_time)
+        transition = kwargs.get(ATTR_TRANSITION, self._fade_time)
 
         logging.debug("Turning off '%s' with transition  %i", self._name, transition)
         self._channel.add_fade([0 for k in range(self._channel.width)], transition * 1000, pyartnet.fades.LinearFade)
@@ -202,7 +284,7 @@ class ArtnetDimmer(ArtnetBaseLight):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        self._features = (light.SUPPORT_BRIGHTNESS | light.SUPPORT_TRANSITION)
+        self._features = (SUPPORT_TRANSITION)
 
     def get_target_values(self):
         return [self.brightness]
@@ -210,8 +292,8 @@ class ArtnetDimmer(ArtnetBaseLight):
     async def async_turn_on(self, **kwargs):
         
         # Update state from service call
-        if light.ATTR_BRIGHTNESS in kwargs:
-            self._brightness = kwargs[light.ATTR_BRIGHTNESS]
+        if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
 
         await super().async_create_fade(**kwargs)
 
@@ -223,7 +305,8 @@ class ArtnetRGB(ArtnetBaseLight):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        self._features = (light.SUPPORT_BRIGHTNESS | light.SUPPORT_TRANSITION | light.SUPPORT_COLOR)
+        self._features = ( SUPPORT_TRANSITION )
+        self._color_mode = COLOR_MODE_RGB
         self._rgb = [255, 255, 255]
         
         self._scale_factor = 1
@@ -238,16 +321,51 @@ class ArtnetRGB(ArtnetBaseLight):
         """
 
         # RGB already contains brightness information
-        if light.ATTR_RGB_COLOR in kwargs:
-            self._rgb = kwargs[light.ATTR_RGB_COLOR]
+        if ATTR_RGB_COLOR in kwargs:
+            self._rgb = kwargs[ATTR_RGB_COLOR]
             self._brightness = max(self._rgb)
             self._scale_factor = 1
         
-        if light.ATTR_HS_COLOR in kwargs:
-            self._rgb = list(color_util.color_hs_to_RGB(*kwargs[light.ATTR_HS_COLOR]))
+        if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
+            self._scale_factor = self._brightness / 255
+      
+        await super().async_create_fade(**kwargs)
+        return None
+
+class ArtnetWhite(ArtnetBaseLight):
+    CONF_TYPE = 'ww'
+    CHANNEL_WIDTH = 2
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         
-        if light.ATTR_BRIGHTNESS in kwargs:
-            self._brightness = kwargs[light.ATTR_BRIGHTNESS]
+        self._features = ( SUPPORT_TRANSITION )
+        self._color_mode = COLOR_MODE_COLOR_TEMP
+        self._ct = 250
+    
+    def get_target_values(self):
+        ww_fraction = (self._color_temp - self.min_mireds) / (
+                           self.max_mireds - self.min_mireds)
+        cw_fraction = 1 - ww_fraction
+        max_fraction = max(ww_fraction, cw_fraction)
+        l = [
+                round(self.is_on * self._brightness * (ww_fraction / max_fraction)),
+                round(self.is_on * self._brightness * (cw_fraction / max_fraction))
+                ]
+        return l
+    
+    async def async_turn_on(self, **kwargs):
+        """
+        Instruct the light to turn on.
+        """
+        if ATTR_COLOR_TEMP in kwargs:
+            self._ct = kwargs[ATTR_COLOR_TEMP]
+            self._brightness = 255
+            self._scale_factor = 1
+        
+        if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
             self._scale_factor = self._brightness / 255
       
         await super().async_create_fade(**kwargs)
@@ -261,7 +379,8 @@ class ArtnetRGBW(ArtnetRGB):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        self._features = (light.SUPPORT_BRIGHTNESS | light.SUPPORT_TRANSITION | light.SUPPORT_COLOR| light.SUPPORT_WHITE_VALUE)
+        self._features = ( SUPPORT_TRANSITION )
+        self._color_mode = COLOR_MODE_RGBW
         self._white = 255
     
     def get_target_values(self):
@@ -274,10 +393,6 @@ class ArtnetRGBW(ArtnetRGB):
         Instruct the light to turn on.
         """
 
-        # RGB already contains brightness information
-        if light.ATTR_WHITE_VALUE in kwargs:
-            self._white = kwargs[light.ATTR_WHITE_VALUE]
-
         await super().async_turn_on(**kwargs)
 
 
@@ -288,7 +403,7 @@ class ArtnetRGBW(ArtnetRGB):
 __CLASS_LIST = [ArtnetDimmer, ArtnetRGB, ArtnetRGBW]
 __CLASS_TYPE = {k.CONF_TYPE : k for k in __CLASS_LIST}
 
-PLATFORM_SCHEMA = light.PLATFORM_SCHEMA.extend({
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_NODE_HOST): cv.string,
     vol.Required(CONF_NODE_UNIVERSES): {
         vol.All(int, vol.Range(min=0, max=1024)): {

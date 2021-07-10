@@ -1,9 +1,9 @@
 {
   "domain": "artnet",
   "name": "DMX Artnet integration",
-  "documentation": "https://github.com/spacemanspiff2007/home-assistant-artnet",
+  "documentation": "https://github.com/corb3000/home-assistant-artnet",
   "dependencies": [],
-  "codeowners": ["spacemanspiff2007"],
+  "codeowners": ["corb3000"],
   "requirements": ["pyartnet==0.8.2"],
-  "version": "0.1.2"
+  "version": "0.2.0"
 }
