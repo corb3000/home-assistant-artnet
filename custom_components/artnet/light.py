@@ -17,6 +17,7 @@ from homeassistant.components.light import (
     COLOR_MODE_RGBWW,
     SUPPORT_EFFECT,
     SUPPORT_TRANSITION,
+    PLATFORM_SCHEMA,
     LightEntity,
 )
 
